@@ -65,7 +65,7 @@ def generate_license_file() -> None:
             path_to_container + container + "/pyproject.toml")
         if pyproject_toml_path.exists():
             python_version = get_python_version(pyproject_toml_path)
-            create_venv(container + "_venv", path_to_container + container, python_version, path_to_container)
+            create_venv(container, path_to_container + container, python_version, path_to_container)
             create_license_file(path_to_container + container)
             delete_venv(container + "_venv", path_to_venv + container, python_version)
         else:
@@ -85,14 +85,16 @@ def git_checkout_tag(container, version):
     subprocess.run("git checkout " + tag, shell=True, cwd=str(pathlib.Path.cwd() / "container" / container))
 
 
-def create_venv(venv_name, path_to_venv, python_version, path_to_container):
+def create_venv(container_name, path_to_venv, python_version, path_to_container):
     pyenv_path = Path(f"/home/azubi/.pyenv/versions/{python_version}")
     if not pyenv_path.is_dir():
         subprocess.run('~/.pyenv/bin/pyenv install ' + python_version, shell=True, cwd=path_to_venv)
     print("pyenv virtualenv")
+    venv_name = container_name + "_venv"
     subprocess.run('~/.pyenv/bin/pyenv virtualenv ' + python_version + ' ' + venv_name, shell=True)
     print('pip install')
-    subprocess.run(f"~/.pyenv/versions/{venv_name}/bin/pip install " + path_to_container + venv_name, shell=True)
+    pipinstall = path_to_container + container_name
+    subprocess.run(f"~/.pyenv/versions/{venv_name}/bin/pip install " + pipinstall, shell=True)
     #  subprocess.run('~/.pyenv/versions/' + repo_name + '/bin/python', shell=True)
 
 
@@ -171,9 +173,9 @@ def clear_output_file(file_path):
 
 def delete_venv(venv_name, path_to_venv, python_version):
     #subprocess.run('~/.pyenv/bin/pyenv deactivate ' + python_version + '/envs/' + venv_name, shell=True, cwd=path_to_venv)
-    path_to_venv = "/home/azubi/.pyenv/versions/3.8.16/envs/" + venv_name
-    path_to_shortcut = "/home/azubi/.pyenv/versions/ " + venv_name
-    subprocess.run('ls -l ' + path_to_shortcut)
+    path_to_venv = f"/home/azubi/.pyenv/versions/3.8.16/envs/{venv_name}"
+    path_to_shortcut = f"/home/azubi/.pyenv/versions/ {venv_name}"
+    #subprocess.run('ls -l ' + path_to_shortcut)
     """if os.path.isfile(path_to_shortcut):
         os.remove(path_to_shortcut)
     else:
