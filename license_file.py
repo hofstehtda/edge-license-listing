@@ -1,7 +1,7 @@
 import json
-import os
 import pathlib
 import shutil
+import argparse
 from typing import Dict
 from pathlib import Path
 
@@ -9,19 +9,20 @@ import yaml
 import re
 import subprocess
 
+VENV_NAME = '_venv_licenses'
 
 def open_yaml_file(file_path: str) -> dict:
     with open(file_path, "r") as stream:
         return yaml.safe_load(stream)
 
 
-def get_containers_and_version(file_path: str) -> Dict[str, str]:
+def get_containers_and_version(file_path: Path) -> Dict[str, str]:
     """
     returns name and version of docker-compose.yml as a dict
     :param file_path: file path to yaml file
     :return: dict
     """
-    yaml_content = open_yaml_file(file_path)
+    yaml_content = open_yaml_file(str(file_path))
     services = yaml_content["services"]
 
     containers = {}
@@ -41,35 +42,34 @@ def generate_license_file() -> None:
     :param
     :return:
     """
-    path_to_container = "/home/azubi/PycharmProjects/edge-license-listing/container/"
+    current_directory = Path(__file__).parent
+    path_to_container = current_directory / "container"
     path_to_venv = "~/.pyenv/versions/"
 
     delete_directory(path_to_container)
     Path.mkdir(Path.cwd() / "container")
 
-    clear_output_file('/home/azubi/PycharmProjects/edge-license-listing/output.txt')
-    clear_output_file('/home/azubi/PycharmProjects/edge-license-listing/output0.txt')
-    clear_output_file('/home/azubi/PycharmProjects/edge-license-listing/output1.txt')
-    clear_output_file('/home/azubi/PycharmProjects/edge-license-listing/output2.json')
-    clear_output_file('/home/azubi/PycharmProjects/edge-license-listing/output3.txt')
-    clear_output_file('/home/azubi/PycharmProjects/edge-license-listing/output4.txt')
-    clear_output_file('/home/azubi/PycharmProjects/edge-license-listing/output5.txt')
-    clear_output_file('/home/azubi/PycharmProjects/edge-license-listing/output6.txt')
-    containers = get_containers_and_version(
-        "/home/azubi/PycharmProjects/edge-license-listing/yml_files/docker-compose.yml")
+    clear_output_file(current_directory / "output.txt")
+    clear_output_file(current_directory / "output0.txt")
+    clear_output_file(current_directory / "output2.json")
+    containers = get_containers_and_version(current_directory / "yml_files" / "docker-compose.yml")
 
     for container, version in containers.items():
         git_clone_repo(container)
         git_checkout_tag(container, version)
-        pyproject_toml_path = Path(
-            path_to_container + container + "/pyproject.toml")
+        pyproject_toml_path = Path(path_to_container / container / "pyproject.toml")
         if pyproject_toml_path.exists():
             python_version = get_python_version(pyproject_toml_path)
-            create_venv(container, path_to_container + container, python_version, path_to_container)
-            create_license_file(path_to_container + container)
-            delete_venv(container + "_venv", path_to_venv + container, python_version)
+            create_venv(
+                container,
+                path_to_container / container,
+                python_version,
+                path_to_container,
+            )
+            create_license_file(path_to_container / container, container + VENV_NAME)
+            delete_venv(container + VENV_NAME)
         else:
-            print('no pyproject.toml')
+            print("no pyproject.toml")
 
     delete_directory(path_to_container)
     delete_not_necessary_licenses()
@@ -77,25 +77,38 @@ def generate_license_file() -> None:
 
 def git_clone_repo(repo_name):
     ssh = "git@github.com:kraussmaffei/" + repo_name + ".git"
-    subprocess.run('git clone ' + ssh, shell=True, cwd=str(pathlib.Path.cwd() / "container"))
+    subprocess.run(
+        "git clone " + ssh, shell=True, cwd=str(pathlib.Path.cwd() / "container")
+    )
 
 
 def git_checkout_tag(container, version):
     tag = "v" + version
-    subprocess.run("git checkout " + tag, shell=True, cwd=str(pathlib.Path.cwd() / "container" / container))
+    subprocess.run(
+        "git -c advice.detachedHead=false checkout " + tag,
+        shell=True,
+        cwd=str(pathlib.Path.cwd() / "container" / container),
+    )
 
 
 def create_venv(container_name, path_to_venv, python_version, path_to_container):
     pyenv_path = Path(f"/home/azubi/.pyenv/versions/{python_version}")
     if not pyenv_path.is_dir():
-        subprocess.run('~/.pyenv/bin/pyenv install ' + python_version, shell=True, cwd=path_to_venv)
+        subprocess.run(
+            f"~/.pyenv/bin/pyenv install {python_version}", shell=True, cwd=path_to_venv
+        )
     print("pyenv virtualenv")
-    venv_name = container_name + "_venv"
-    subprocess.run('~/.pyenv/bin/pyenv virtualenv ' + python_version + ' ' + venv_name, shell=True)
-    print('pip install')
-    pipinstall = path_to_container + container_name
-    subprocess.run(f"~/.pyenv/versions/{venv_name}/bin/pip install " + pipinstall, shell=True)
+    venv_name = container_name + VENV_NAME
+    subprocess.run(
+        f"~/.pyenv/bin/pyenv virtualenv {python_version} {venv_name}", shell=True
+    )
+    print("pip install")
+    pipinstall = path_to_container / container_name
+    subprocess.run(
+        f"~/.pyenv/versions/{venv_name}/bin/pip install " + str(pipinstall), shell=True
+    )
     #  subprocess.run('~/.pyenv/versions/' + repo_name + '/bin/python', shell=True)
+    print("pip install done")
 
 
 def delete_directory(path):
@@ -105,84 +118,79 @@ def delete_directory(path):
         print("Error: %s : %s" % (path, e.strerror))
 
 
-def create_license_file(path_to_repo):
-    subprocess.run('pip-licenses --with-license-file --with-notice-file --no-license-path --format=plain-vertical  '
-                   '> /home/azubi/PycharmProjects/edge-license-listing/output.txt',
-                   shell=True,
-                   cwd=path_to_repo)
-    subprocess.run('pip-licenses --with-license-file --with-notice-file --no-license-path --format=json  '
-                   '> /home/azubi/PycharmProjects/edge-license-listing/output0.txt',
-                   shell=True,
-                   cwd=path_to_repo)
-    subprocess.run('pip-licenses --format=plain-vertical --with-license-file --no-license-path  '
-                   '> /home/azubi/PycharmProjects/edge-license-listing/output1.txt',
-                   shell=True,
-                   cwd=path_to_repo)
-    subprocess.run('pip-licenses --from=all --with-authors --format=json '
-                   '> /home/azubi/PycharmProjects/edge-license-listing/output2.json',
-                   shell=True,
-                   cwd=path_to_repo)
-    subprocess.run('pip-licenses --order=license '
-                   '> /home/azubi/PycharmProjects/edge-license-listing/output3.txt',
-                   shell=True,
-                   cwd=path_to_repo)
-    subprocess.run('pip-licenses --from=all --with-authors '
-                   '> /home/azubi/PycharmProjects/edge-license-listing/output4.txt',
-                   shell=True,
-                   cwd=path_to_repo)
-    subprocess.run('pip-licenses --with-urls '
-                   '> /home/azubi/PycharmProjects/edge-license-listing/output5.txt',
-                   shell=True,
-                   cwd=path_to_repo)
-    subprocess.run('pip-licenses --with-description '
-                   '> /home/azubi/PycharmProjects/edge-license-listing/output6.txt',
-                   shell=True,
-                   cwd=path_to_repo)
+def create_license_file(path_to_repo, venv_name):
+    path_to_pyenv = f"~/.pyenv/versions/{venv_name}/bin/pip"
+    path_to_venv = f"/home/azubi/.pyenv/versions/3.8.16/envs/{venv_name}"
+
+    print("output.txt")
+    subprocess.run(
+        f"pip-licenses --python={path_to_venv}/bin/python --with-license-file --with-notice-file --no-license-path --format=plain-vertical  > /home/azubi/PycharmProjects/edge-license-listing/output.txt",
+        shell=True,
+        cwd=path_to_repo,
+    )
+
+    print("output2.json")
+    subprocess.run(
+        f"pip-licenses --python={path_to_venv}/bin/python --from=all --with-authors --format=json "
+        "> ~/PycharmProjects/edge-license-listing/output2.json",
+        shell=True,
+        cwd=path_to_repo,
+    )
+
+    print("output0.txt")
+    subprocess.run(
+        f"pip-licenses --python={path_to_venv}/bin/python --with-description --with-system | grep pip > /home/azubi/PycharmProjects/edge-license-listing/output0.txt",
+        shell=True,
+    )
 
 
 def delete_not_necessary_licenses():
+    """
+
+    :return:
+    """
     licenses = {
         "Apache License": "true",
         "BSD License": "true",
         "GNU GPL": "false",
         "MIT License": "true",
-        "UNKNOWN": "false"
+        "UNKNOWN": "false",
     }
-    allowed_licenses = ['Apache Software License', 'MIT License', 'BSD License', 'Unilicense', 'Historical Permission Notice and Disclaimer (HPND)']
-    forbidden_licenses = ['GPL', 'Mozilla Public License']
+    allowed_licenses = [
+        "Apache Software License",
+        "MIT License",
+        "BSD License",
+        "Unilicense",
+        "Historical Permission Notice and Disclaimer (HPND)",
+    ]
+    forbidden_licenses = ["GPL", "Mozilla Public License"]
 
-    json_file = open('output2.json')
+    json_file = open("output2.json")
     json_data = json.load(json_file)
     for dict in json_data:
         keys = dict.keys()
-        #  print(keys)
         values = dict.values()
-        #  print(values)
         if dict["License-Classifier"] == "UNKNOWN":
-            print('WARNING\n')
+            print("WARNING\n")
         elif dict["License-Classifier"] not in allowed_licenses:
-            print('NOT ALLOWED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+            print("NOT ALLOWED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             print(values)
-            print('\n')
+            print("\n")
 
 
 def clear_output_file(file_path):
-    with open(file_path, 'w') as file:
-        file.write('')
+    with open(file_path, "w") as file:
+        file.write("")
 
 
-def delete_venv(venv_name, path_to_venv, python_version):
-    #subprocess.run('~/.pyenv/bin/pyenv deactivate ' + python_version + '/envs/' + venv_name, shell=True, cwd=path_to_venv)
-    path_to_venv = f"/home/azubi/.pyenv/versions/3.8.16/envs/{venv_name}"
-    path_to_shortcut = f"/home/azubi/.pyenv/versions/ {venv_name}"
-    #subprocess.run('ls -l ' + path_to_shortcut)
-    """if os.path.isfile(path_to_shortcut):
-        os.remove(path_to_shortcut)
-    else:
-        print("delete venv")
-        print("Error: %s file not found" % path_to_shortcut)"""
-    delete_directory(path_to_venv)
+def delete_venv(venv_name):
+    subprocess.run(f"~/.pyenv/bin/pyenv virtualenv-delete -f {venv_name}", shell=True)
 
 
 def get_python_version(pyproject_toml_path):
+    """
+    get python version from pyproject.toml
+    :param pyproject_toml_path:
+    :return:
+    """
     return "3.8.16"
