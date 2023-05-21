@@ -11,6 +11,7 @@ import subprocess
 
 VENV_NAME = '_venv_licenses'
 
+
 def open_yaml_file(file_path: str) -> dict:
     with open(file_path, "r") as stream:
         return yaml.safe_load(stream)
@@ -92,6 +93,14 @@ def git_checkout_tag(container, version):
 
 
 def create_venv(container_name, path_to_venv, python_version, path_to_container):
+    """
+
+    :param container_name:
+    :param path_to_venv:
+    :param python_version:
+    :param path_to_container:
+    :return:
+    """
     pyenv_path = Path(f"/home/azubi/.pyenv/versions/{python_version}")
     if not pyenv_path.is_dir():
         subprocess.run(
@@ -104,8 +113,9 @@ def create_venv(container_name, path_to_venv, python_version, path_to_container)
     )
     print("pip install")
     pipinstall = path_to_container / container_name
+    VIRTUAL_ENV = "/home/azubi/.pyenv/versions/3.8.16/envs/common-diagnostic_venv_licenses"
     subprocess.run(
-        f"~/.pyenv/versions/{venv_name}/bin/pip install " + str(pipinstall), shell=True
+        f"~/.pyenv/versions/{venv_name}/bin/pip install " + str(pipinstall), shell=True, env={"VIRTUAL_ENV":"/home/azubi/.pyenv/versions/3.8.16/envs/common-diagnostic_venv_licenses"}
     )
     #  subprocess.run('~/.pyenv/versions/' + repo_name + '/bin/python', shell=True)
     print("pip install done")
@@ -119,6 +129,12 @@ def delete_directory(path):
 
 
 def create_license_file(path_to_repo, venv_name):
+    """
+
+    :param path_to_repo:
+    :param venv_name:
+    :return:
+    """
     path_to_pyenv = f"~/.pyenv/versions/{venv_name}/bin/pip"
     path_to_venv = f"/home/azubi/.pyenv/versions/3.8.16/envs/{venv_name}"
 
@@ -127,6 +143,7 @@ def create_license_file(path_to_repo, venv_name):
         f"pip-licenses --python={path_to_venv}/bin/python --with-license-file --with-notice-file --no-license-path --format=plain-vertical  > /home/azubi/PycharmProjects/edge-license-listing/output.txt",
         shell=True,
         cwd=path_to_repo,
+        env={"VIRTUAL_ENV": "/home/azubi/.pyenv/versions/3.8.16/envs/common-diagnostic_venv_licenses"}
     )
 
     print("output2.json")
