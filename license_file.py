@@ -1,51 +1,40 @@
 import json
 import pathlib
 import shutil
-import argparse
-from typing import Dict
+from typing import Tuple, List
 from pathlib import Path
 
-import yaml
 import re
 import subprocess
 
-VENV_NAME = '_venv_licenses'
+VENV_NAME = "_venv_licenses"
+PATH_TO_PYENV_FOLDER = "/home/azubi"
+codeartifact = 304998364617
+
+DOCKER_NAME_VERSION_PATTERN = fr"image: {codeartifact}.dkr.ecr.eu-central-1.amazonaws.com/([a-z-]+):(\d+\.\d+\.\d+)"
 
 
-def open_yaml_file(file_path: str) -> dict:
-    with open(file_path, "r") as stream:
-        return yaml.safe_load(stream)
-
-
-def get_containers_and_version(file_path: Path) -> Dict[str, str]:
+def get_containers_and_version(file_path: Path) -> List[Tuple[str, str]]:
     """
-    returns name and version of docker-compose.yml as a dict
+    opens docker-compose.yaml and returns name and version as a list
     :param file_path: file path to yaml file
-    :return: dict
+    :return: list
     """
-    yaml_content = open_yaml_file(str(file_path))
-    services = yaml_content["services"]
+    yaml_content = file_path.read_text()
 
-    containers = {}
-    for service_definition in services.values():
-        name_and_version = re.search(
-            "([\w]*-[\w]*){1,}:[\d]*\.[\d]*\.[\d]*", service_definition["image"]
-        )
-        container_name, container_version = re.split(":", name_and_version.group())
-        containers[container_name] = container_version
+    container_list = re.findall(DOCKER_NAME_VERSION_PATTERN, yaml_content)
 
-    return containers
+    return container_list
 
 
 def generate_license_file() -> None:
     """
-    generates file with licenses
+    generates output file with licenses
     :param
     :return:
     """
     current_directory = Path(__file__).parent
     path_to_container = current_directory / "container"
-    path_to_venv = "~/.pyenv/versions/"
 
     delete_directory(path_to_container)
     Path.mkdir(Path.cwd() / "container")
@@ -53,9 +42,11 @@ def generate_license_file() -> None:
     clear_output_file(current_directory / "output.txt")
     clear_output_file(current_directory / "output0.txt")
     clear_output_file(current_directory / "output2.json")
-    containers = get_containers_and_version(current_directory / "yml_files" / "docker-compose.yml")
+    containers = get_containers_and_version(
+        current_directory / "yml_files" / "docker-compose.yml"
+    )
 
-    for container, version in containers.items():
+    for container, version in containers:
         git_clone_repo(container)
         git_checkout_tag(container, version)
         pyproject_toml_path = Path(path_to_container / container / "pyproject.toml")
@@ -73,7 +64,9 @@ def generate_license_file() -> None:
             print("no pyproject.toml")
 
     delete_directory(path_to_container)
-    delete_not_necessary_licenses()
+
+
+# delete_not_necessary_licenses()
 
 
 def git_clone_repo(repo_name):
@@ -84,12 +77,20 @@ def git_clone_repo(repo_name):
 
 
 def git_checkout_tag(container, version):
+    # TODO: checken ob der befehl fehlschägt, wenn ja nochmal ohne "v" versuchen
     tag = "v" + version
     subprocess.run(
         "git -c advice.detachedHead=false checkout " + tag,
         shell=True,
         cwd=str(pathlib.Path.cwd() / "container" / container),
     )
+    print('v')
+    subprocess.run(
+        "git -c advice.detachedHead=false checkout " + version,
+        shell=True,
+        cwd=str(pathlib.Path.cwd() / "container" / container),
+    )
+    print('tag')
 
 
 def create_venv(container_name, path_to_venv, python_version, path_to_container):
@@ -101,21 +102,32 @@ def create_venv(container_name, path_to_venv, python_version, path_to_container)
     :param path_to_container:
     :return:
     """
-    pyenv_path = Path(f"/home/azubi/.pyenv/versions/{python_version}")
+    pyenv_path = Path(f"{PATH_TO_PYENV_FOLDER}/.pyenv/versions/{python_version}")
     if not pyenv_path.is_dir():
         subprocess.run(
-            f"~/.pyenv/bin/pyenv install {python_version}", shell=True, cwd=path_to_venv
+            f"~/.pyenv/bin/pyenv install {python_version}",
+            shell=True,
+            cwd=path_to_venv,
         )
     print("pyenv virtualenv")
     venv_name = container_name + VENV_NAME
     subprocess.run(
         f"~/.pyenv/bin/pyenv virtualenv {python_version} {venv_name}", shell=True
     )
+
+    venv_path = Path(__file__).parent / "virtual_environments/"  # ????????????
+    # subprocess.run(f"python -m venv {venv_path}")
+
     print("pip install")
     pipinstall = path_to_container / container_name
-    VIRTUAL_ENV = "/home/azubi/.pyenv/versions/3.8.16/envs/common-diagnostic_venv_licenses"
+    venv_path = "/home/azubi/.pyenv/versions/3.8.16/envs/" + venv_name
     subprocess.run(
-        f"~/.pyenv/versions/{venv_name}/bin/pip install " + str(pipinstall), shell=True, env={"VIRTUAL_ENV":"/home/azubi/.pyenv/versions/3.8.16/envs/common-diagnostic_venv_licenses"}
+        f"/home/azubi/.pyenv/versions/3.8.16/envs/{venv_name}/bin/pip install "
+        + str(pipinstall),
+        shell=True,
+        env={
+            "VIRTUAL_ENV": venv_path
+        },
     )
     #  subprocess.run('~/.pyenv/versions/' + repo_name + '/bin/python', shell=True)
     print("pip install done")
@@ -140,25 +152,18 @@ def create_license_file(path_to_repo, venv_name):
 
     print("output.txt")
     subprocess.run(
-        f"pip-licenses --python={path_to_venv}/bin/python --with-license-file --with-notice-file --no-license-path --format=plain-vertical  > /home/azubi/PycharmProjects/edge-license-listing/output.txt",
-        shell=True,
-        cwd=path_to_repo,
-        env={"VIRTUAL_ENV": "/home/azubi/.pyenv/versions/3.8.16/envs/common-diagnostic_venv_licenses"}
-    )
-
-    print("output2.json")
-    subprocess.run(
-        f"pip-licenses --python={path_to_venv}/bin/python --from=all --with-authors --format=json "
-        "> ~/PycharmProjects/edge-license-listing/output2.json",
+        f"pip-licenses --python={path_to_venv}/bin/python --with-license-file --with-notice-file --no-license-path --format=plain-vertical  >> /home/azubi/PycharmProjects/edge-license-listing/output.txt",
         shell=True,
         cwd=path_to_repo,
     )
+    print("output.txt created")
 
-    print("output0.txt")
     subprocess.run(
-        f"pip-licenses --python={path_to_venv}/bin/python --with-description --with-system | grep pip > /home/azubi/PycharmProjects/edge-license-listing/output0.txt",
+        f"pip-licenses --python={path_to_venv}/bin/python --from=all --with-description --format=json  >> /home/azubi/PycharmProjects/edge-license-listing/output2.json",
         shell=True,
+        cwd=path_to_repo,
     )
+    print("output2.json created")
 
 
 def delete_not_necessary_licenses():
@@ -185,14 +190,12 @@ def delete_not_necessary_licenses():
     json_file = open("output2.json")
     json_data = json.load(json_file)
     for dict in json_data:
-        keys = dict.keys()
         values = dict.values()
         if dict["License-Classifier"] == "UNKNOWN":
-            print("WARNING\n")
+            print("WARNING")
         elif dict["License-Classifier"] not in allowed_licenses:
-            print("NOT ALLOWED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            print("NOT ALLOWED!")
             print(values)
-            print("\n")
 
 
 def clear_output_file(file_path):
